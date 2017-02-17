@@ -7,6 +7,7 @@ import simplejson as json
 from os.path import isfile
 import jsonpath_rw
 import requests
+import os
 
 
 cache = {}
@@ -23,13 +24,21 @@ class RefResolver:
         else:
             self.url_fragments = None
 
-
+    def __init__(self, id, basePath=None):
+        self.id = id
+        self.basePath = basePath
+        if id is not None:
+            self.url_fragments = urlparse(id)
+        else:
+            self.url_fragments = None
 
     def resolve(self, json_obj):
         if isinstance(json_obj, dict):
             for key, value in json_obj.items():
                 if key == "$ref":
                     ref_frag = urlparse(value)
+                    if ref_frag.path == '':
+                        ref_frag = urlparse(os.path.basename(self.basePath) + value)
                     ref_file = ref_frag.netloc + ref_frag.path
                     json_dump = {}
                     if ref_file in cache:
@@ -60,6 +69,17 @@ class RefResolver:
                             else:
                                 # if the ref is in the same file grab it from the same file
                                 json_dump = json.load(open(self.url_fragments.netloc+self.url_fragments.path))
+                                cache[ref_file] = json_dump
+                        elif self.basePath:
+                            path = os.path.dirname(self.basePath) + "/" + ref_file.split('#')[0]
+                            if isfile(path):
+                                json_dump = json.load(open(path))
+                                if 'id' in json_dump:
+                                    ref_id = json_dump['id']
+                                else:
+                                    ref_id = os.path.basename(path) + "#" + ref_frag.fragment
+                                cache[ref_file] = json_dump
+                                RefResolver(ref_id, path).resolve(json_dump)
                                 cache[ref_file] = json_dump
 
                     ref_path_expr = "$" + ".".join(ref_frag.fragment.split("/"))
